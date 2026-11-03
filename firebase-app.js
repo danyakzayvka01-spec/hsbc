@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js";
-import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, collection, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-functions.js";
 import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
 
@@ -8,6 +8,28 @@ const authMessage = document.getElementById("authMessage");
 const adminMessage = document.getElementById("adminFormMessage");
 const firebaseReady = isFirebaseConfigured;
 let auth, db, functions;
+const MAX_DOCUMENT_BYTES = 512 * 1024;
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = () => reject(new Error("Could not read the selected PDF."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function downloadPdf(base64, fileName) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName || "document.pdf";
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 function showMessage(el, message, kind = "error") {
   el.textContent = message;
@@ -20,7 +42,8 @@ function friendlyError(error) {
   if (code.includes("invalid-credential") || code.includes("user-not-found") || code.includes("wrong-password")) return "Email or password is incorrect.";
   if (code.includes("too-many-requests")) return "Too many attempts. Wait a little and try again.";
   if (code.includes("email-already-exists")) return "An account with this email already exists.";
-  if (code.includes("permission-denied") || code.includes("unauthenticated")) return "Your account does not have permission to do that.";
+  if (code.includes("permission-denied")) return "Firebase denied the admin check. In Firebase Console, publish firestore.rules and add admins/{your Auth UID} with enabled=true for this administrator.";
+  if (code.includes("unauthenticated")) return "Sign in again and retry.";
   if (code.includes("functions/unavailable") || code.includes("not-found")) return "Firebase Functions are not deployed yet. See the setup guide.";
   return error?.message || "Something went wrong. Please try again.";
 }
@@ -43,6 +66,10 @@ function setPortal(role) {
     loadClientRecord();
   }
   if (window.lucide) window.lucide.createIcons();
+}
+
+function prettyCardNumber(value) {
+  return String(value || "").replace(/\D/g, "").match(/.{1,4}/g)?.join(" ") || "";
 }
 
 async function resolveRole(user) {
@@ -113,6 +140,72 @@ async function loadClients() {
   }
 }
 
+function renderDocumentRows(container, documents, uid, emptyMessage, admin = false) {
+  container.replaceChildren();
+  if (!documents.length) {
+    container.append(Object.assign(document.createElement("p"), { className: "p-6 text-sm text-slate-400", textContent: emptyMessage }));
+    return;
+  }
+  documents.forEach(item => {
+    const row = document.createElement("div");
+    row.className = "flex items-center gap-3 px-5 py-4";
+    const icon = document.createElement("span");
+    icon.className = "grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-rose-50 text-rose-700";
+    icon.innerHTML = '<i data-lucide="file-text" class="h-5 w-5"></i>';
+    const detail = document.createElement("span");
+    detail.className = "min-w-0 flex-1";
+    const title = document.createElement("span");
+    title.className = "block truncate text-sm font-semibold text-slate-800";
+    title.textContent = item.title || "Document";
+    const meta = document.createElement("span");
+    meta.className = "mt-1 block truncate text-xs text-slate-500";
+    const date = item.createdAt?.toDate ? item.createdAt.toDate().toLocaleDateString("en-US") : "Recently added";
+    meta.textContent = `${item.category || "PDF"} · ${date}${admin ? ` · ${Math.max(1, Math.ceil((item.sizeBytes || 0) / 1024))} KB` : ""}`;
+    detail.append(title, meta);
+    const download = document.createElement("button");
+    download.type = "button";
+    download.className = "inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50";
+    download.innerHTML = '<i data-lucide="download" class="h-4 w-4"></i><span>Download</span>';
+    download.addEventListener("click", async () => {
+      download.disabled = true;
+      try {
+        if (!item.dataBase64) throw new Error("The document file is missing.");
+        downloadPdf(item.dataBase64, item.originalName);
+      } catch (error) { showToast(friendlyError(error)); }
+      finally { download.disabled = false; }
+    });
+    row.append(icon, detail, download);
+    container.append(row);
+  });
+  if (window.lucide) window.lucide.createIcons();
+}
+
+async function loadClientDocuments() {
+  const container = document.getElementById("clientDocumentList");
+  const user = auth?.currentUser;
+  if (!user) return;
+  container.replaceChildren(Object.assign(document.createElement("p"), { className: "p-6 text-sm text-slate-400", textContent: "Loading your documents…" }));
+  try {
+    const result = await getDocs(query(collection(db, "users", user.uid, "documents"), orderBy("createdAt", "desc")));
+    const documents = result.docs.map(item => ({ id: item.id, ...item.data() }));
+    renderDocumentRows(container, documents, user.uid, "No documents have been shared with you yet.");
+  } catch (error) {
+    container.replaceChildren(Object.assign(document.createElement("p"), { className: "p-6 text-sm text-rose-700", textContent: friendlyError(error) }));
+  }
+}
+
+async function loadAdminDocuments(uid) {
+  const container = document.getElementById("adminDocumentList");
+  container.replaceChildren(Object.assign(document.createElement("p"), { className: "py-3 text-xs text-slate-400", textContent: "Loading client documents…" }));
+  try {
+    const result = await getDocs(query(collection(db, "users", uid, "documents"), orderBy("createdAt", "desc")));
+    const documents = result.docs.map(item => ({ id: item.id, ...item.data() }));
+    renderDocumentRows(container, documents, uid, "No documents added for this client yet.", true);
+  } catch (error) {
+    container.replaceChildren(Object.assign(document.createElement("p"), { className: "py-3 text-xs text-rose-700", textContent: friendlyError(error) }));
+  }
+}
+
 function selectClient(client) {
   document.getElementById("balanceEditor").classList.remove("hidden");
   document.getElementById("selectedClientName").textContent = client.displayName || "Client";
@@ -121,6 +214,8 @@ function selectClient(client) {
   document.getElementById("editClientBalance").value = Number(client.checkingBalance || 0).toFixed(2);
   document.getElementById("editClientCurrency").value = client.currency || "USD";
   document.getElementById("balanceMessage").classList.add("hidden");
+  document.getElementById("documentFormMessage").classList.add("hidden");
+  loadAdminDocuments(client.uid);
 }
 
 document.getElementById("loginForm").addEventListener("submit", async event => {
@@ -166,7 +261,7 @@ document.getElementById("createClientForm").addEventListener("submit", async eve
       password: document.getElementById("newClientPassword").value,
       checkingBalance: Number(document.getElementById("newClientBalance").value),
       currency: document.getElementById("newClientCurrency").value,
-      cardLast4: document.getElementById("newClientCardLast4").value
+      cardNumber: document.getElementById("newClientCardNumber").value
     });
     event.target.reset();
     document.getElementById("newClientBalance").value = "0.00";
@@ -190,10 +285,49 @@ document.getElementById("balanceForm").addEventListener("submit", async event =>
   } catch (error) { showMessage(message, friendlyError(error)); }
 });
 
+document.getElementById("adminDocumentForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const message = document.getElementById("documentFormMessage");
+  const button = document.getElementById("uploadDocumentButton");
+  const file = document.getElementById("documentFile").files[0];
+  const uid = document.getElementById("selectedClientUid").value;
+  if (!uid) return showMessage(message, "Select a client account first.");
+  if (!file || file.type !== "application/pdf" || !file.name.toLowerCase().endsWith(".pdf")) {
+    return showMessage(message, "Choose a PDF document.");
+  }
+  if (file.size < 1 || file.size > MAX_DOCUMENT_BYTES) {
+    return showMessage(message, "PDF files must be 512 KB or smaller.");
+  }
+  const documentId = crypto.randomUUID();
+  button.disabled = true;
+  button.textContent = "Saving PDF…";
+  message.classList.add("hidden");
+  try {
+    await callAdmin("adminAddClientDocument", {
+      uid,
+      documentId,
+      title: document.getElementById("documentTitle").value.trim(),
+      description: document.getElementById("documentDescription").value.trim(),
+      category: document.getElementById("documentCategory").value,
+      originalName: file.name,
+      fileBase64: await fileToBase64(file)
+    });
+    event.target.reset();
+    showMessage(message, "PDF saved and shared with the selected client.", "success");
+    await loadAdminDocuments(uid);
+  } catch (error) {
+    showMessage(message, friendlyError(error));
+  } finally {
+    button.disabled = false;
+    button.textContent = "Upload document";
+  }
+});
+
 document.getElementById("refreshClients").addEventListener("click", loadClients);
 document.getElementById("closeBalanceEditor").addEventListener("click", () => document.getElementById("balanceEditor").classList.add("hidden"));
 document.getElementById("adminLogout").addEventListener("click", () => signOut(auth));
 window.firebaseLogout = () => signOut(auth);
+window.loadClientDocuments = loadClientDocuments;
 
 if (!firebaseReady) {
   console.info("Firebase setup needed: edit firebase-config.js before enabling authentication.");

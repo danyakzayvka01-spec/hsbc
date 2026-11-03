@@ -19,6 +19,11 @@ service cloud.firestore {
       allow list: if isAdmin();
       // Profile and balance writes go through privileged callable functions.
       allow create, update, delete: if false;
+
+      match /documents/{documentId} {
+        allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+        allow write: if false;
+      }
     }
 
     match /audit/{uid}/entries/{entryId} {
