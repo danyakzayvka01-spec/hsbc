@@ -31,6 +31,23 @@ function downloadPdf(base64, fileName) {
   URL.revokeObjectURL(url);
 }
 
+function addIdentityInputs() {
+  const form = document.getElementById("createClientForm");
+  if (!form || document.getElementById("newClientPassportNumber")) return;
+  const fieldset = document.createElement("fieldset");
+  fieldset.className = "mb-5 rounded-xl border border-slate-200 p-4";
+  fieldset.innerHTML = `<legend class="px-1 text-xs font-bold text-slate-800">Client identity details</legend>
+    <p class="mb-4 text-[10px] leading-4 text-amber-800">For this HSBC-branded simulation, enter fictional test details only.</p>
+    <label class="mb-3 block text-xs font-semibold">Passport number<input id="newClientPassportNumber" required maxlength="40" autocomplete="off" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label>
+    <label class="mb-3 block text-xs font-semibold">Registered address<input id="newClientRegisteredAddress" required maxlength="200" autocomplete="off" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label>
+    <div class="mb-3 grid grid-cols-2 gap-3"><label class="block text-xs font-semibold">Phone number<input id="newClientPhoneNumber" required type="tel" maxlength="32" autocomplete="off" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label>
+    <label class="block text-xs font-semibold">Citizenship<input id="newClientCitizenship" required maxlength="80" autocomplete="off" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label></div>
+    <label class="block text-xs font-semibold">Passport issue date<input id="newClientPassportIssueDate" required type="date" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label>`;
+  document.getElementById("adminFormMessage").before(fieldset);
+}
+
+addIdentityInputs();
+
 function showMessage(el, message, kind = "error") {
   el.textContent = message;
   el.classList.remove("hidden", "text-rose-700", "text-emerald-700");
@@ -86,11 +103,32 @@ async function loadClientRecord() {
       await signOut(auth);
       return;
     }
-    window.applyClientRecord(snap.data());
+    const record = snap.data();
+    window.applyClientRecord(record);
+    renderClientIdentity(record);
   } catch (error) {
     showMessage(authMessage, friendlyError(error));
     await signOut(auth);
   }
+}
+
+function renderClientIdentity(record) {
+  const settings = document.getElementById("view-settings");
+  if (!settings) return;
+  let panel = document.getElementById("clientIdentityPanel");
+  if (!panel) {
+    panel = document.createElement("section");
+    panel.id = "clientIdentityPanel";
+    panel.className = "mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6";
+    panel.innerHTML = `<div class="mb-4 flex items-center gap-3"><span class="grid h-10 w-10 place-items-center rounded-xl bg-rose-50 text-rose-700"><i data-lucide="contact-round" class="h-5 w-5"></i></span><div><h2 class="font-semibold">Personal information</h2><p class="mt-1 text-xs text-slate-500">Details provided for this account</p></div></div><dl class="grid gap-x-6 gap-y-4 sm:grid-cols-2"><div><dt class="text-[11px] text-slate-400">Full name</dt><dd data-identity="fullName" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Passport number</dt><dd data-identity="passportNumber" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Registered address</dt><dd data-identity="registeredAddress" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Phone number</dt><dd data-identity="phoneNumber" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Passport issue date</dt><dd data-identity="passportIssueDate" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Citizenship</dt><dd data-identity="citizenship" class="mt-1 break-words text-sm font-medium">—</dd></div></dl><p class="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-[10px] leading-4 text-amber-900">Simulation account: these profile details must be fictional.</p>`;
+    settings.insertBefore(panel, settings.children[1] || null);
+  }
+  const values = { fullName: record.displayName, ...(record.identity || {}) };
+  panel.querySelectorAll("[data-identity]").forEach(item => {
+    const value = values[item.dataset.identity];
+    item.textContent = value ? String(value) : "Not provided";
+  });
+  if (window.lucide) window.lucide.createIcons();
 }
 
 async function callAdmin(name, payload = {}) {
@@ -261,7 +299,12 @@ document.getElementById("createClientForm").addEventListener("submit", async eve
       password: document.getElementById("newClientPassword").value,
       checkingBalance: Number(document.getElementById("newClientBalance").value),
       currency: document.getElementById("newClientCurrency").value,
-      cardNumber: document.getElementById("newClientCardNumber").value
+      cardNumber: document.getElementById("newClientCardNumber").value,
+      passportNumber: document.getElementById("newClientPassportNumber").value.trim(),
+      registeredAddress: document.getElementById("newClientRegisteredAddress").value.trim(),
+      phoneNumber: document.getElementById("newClientPhoneNumber").value.trim(),
+      passportIssueDate: document.getElementById("newClientPassportIssueDate").value,
+      citizenship: document.getElementById("newClientCitizenship").value.trim()
     });
     event.target.reset();
     document.getElementById("newClientBalance").value = "0.00";

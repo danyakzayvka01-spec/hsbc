@@ -42,7 +42,7 @@ exports.adminListClients = onCall(async request => {
 
 exports.adminCreateClient = onCall(async request => {
   await requireAdmin(request);
-  const { displayName, email, password, checkingBalance, currency, cardNumber } = request.data || {};
+  const { displayName, email, password, checkingBalance, currency, cardNumber, passportNumber, registeredAddress, phoneNumber, passportIssueDate, citizenship } = request.data || {};
   if (typeof displayName !== "string" || displayName.trim().length < 2 || displayName.trim().length > 80) {
     throw new HttpsError("invalid-argument", "Enter a client name between 2 and 80 characters.");
   }
@@ -55,6 +55,22 @@ exports.adminCreateClient = onCall(async request => {
   const normalizedCardNumber = typeof cardNumber === "string" ? cardNumber.replace(/[\s-]/g, "") : "";
   if (!/^\d{12,19}$/.test(normalizedCardNumber)) {
     throw new HttpsError("invalid-argument", "Enter a fictional demo card number containing 12 to 19 digits.");
+  }
+  const identity = {
+    passportNumber: [passportNumber, 4, 40, "Passport number"],
+    registeredAddress: [registeredAddress, 5, 200, "Registered address"],
+    phoneNumber: [phoneNumber, 5, 32, "Phone number"],
+    passportIssueDate: [passportIssueDate, 10, 10, "Issue date"],
+    citizenship: [citizenship, 2, 80, "Citizenship"]
+  };
+  for (const [value, min, max, label] of Object.values(identity)) {
+    if (typeof value !== "string" || value.trim().length < min || value.trim().length > max) {
+      throw new HttpsError("invalid-argument", `${label} is required and must be ${min}–${max} characters.`);
+    }
+  }
+  const issueDate = new Date(`${passportIssueDate}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(passportIssueDate) || Number.isNaN(issueDate.getTime()) || issueDate.toISOString().slice(0, 10) !== passportIssueDate) {
+    throw new HttpsError("invalid-argument", "Enter a valid passport issue date.");
   }
 
   const amount = validateBalance(checkingBalance);
@@ -76,6 +92,7 @@ exports.adminCreateClient = onCall(async request => {
       currency: code,
       cardNumber: normalizedCardNumber,
       cardLast4: normalizedCardNumber.slice(-4),
+      identity: Object.fromEntries(Object.entries(identity).map(([key, [value]]) => [key, value.trim()])),
       role: "client",
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp()
