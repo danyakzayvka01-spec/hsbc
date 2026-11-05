@@ -1,9 +1,8 @@
 {
-  "functions": [{ "source": "functions", "codebase": "default" }],
   "firestore": { "rules": "firestore.rules" },
   "hosting": {
     "public": ".",
-    "ignore": ["firebase.json", "firestore.rules", "functions/**", "README.md", "package.json", ".firebaserc", ".gitignore", "vercel.json"],
+    "ignore": ["firebase.json", "firestore.rules", "README.md", "package.json", ".firebaserc", ".gitignore", "vercel.json"],
     "rewrites": [{ "source": "**", "destination": "/index.html" }]
   }
 }

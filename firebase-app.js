@@ -1,36 +1,14 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, collection, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
-import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-functions.js";
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, createUserWithEmailAndPassword, deleteUser, setPersistence, inMemoryPersistence } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, collection, getDocs, query, orderBy, limit, setDoc, updateDoc, deleteDoc, runTransaction, serverTimestamp, onSnapshot } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js";
 import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
 
 const authMessage = document.getElementById("authMessage");
 const adminMessage = document.getElementById("adminFormMessage");
 const firebaseReady = isFirebaseConfigured;
-let auth, db, functions;
-const MAX_DOCUMENT_BYTES = 512 * 1024;
-
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
-    reader.onerror = () => reject(new Error("Could not read the selected PDF."));
-    reader.readAsDataURL(file);
-  });
-}
-
-function downloadPdf(base64, fileName) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName || "document.pdf";
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
+let auth, db;
+let stopClientProfileListener = () => {};
+let stopClientTransactionsListener = () => {};
 function addIdentityInputs() {
   const form = document.getElementById("createClientForm");
   if (!form || document.getElementById("newClientPassportNumber")) return;
@@ -38,15 +16,44 @@ function addIdentityInputs() {
   fieldset.className = "mb-5 rounded-xl border border-slate-200 p-4";
   fieldset.innerHTML = `<legend class="px-1 text-xs font-bold text-slate-800">Client identity details</legend>
     <p class="mb-4 text-[10px] leading-4 text-amber-800">For this HSBC-branded simulation, enter fictional test details only.</p>
+    <label class="mb-3 block text-xs font-semibold">Card expiration<input id="newClientCardExpiry" required type="month" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label>
     <label class="mb-3 block text-xs font-semibold">Passport number<input id="newClientPassportNumber" required maxlength="40" autocomplete="off" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label>
     <label class="mb-3 block text-xs font-semibold">Registered address<input id="newClientRegisteredAddress" required maxlength="200" autocomplete="off" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label>
     <div class="mb-3 grid grid-cols-2 gap-3"><label class="block text-xs font-semibold">Phone number<input id="newClientPhoneNumber" required type="tel" maxlength="32" autocomplete="off" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label>
     <label class="block text-xs font-semibold">Citizenship<input id="newClientCitizenship" required maxlength="80" autocomplete="off" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label></div>
     <label class="block text-xs font-semibold">Passport issue date<input id="newClientPassportIssueDate" required type="date" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label>`;
   document.getElementById("adminFormMessage").before(fieldset);
+  const expiryInput = document.getElementById("newClientCardExpiry");
+  const now = new Date();
+  expiryInput.min = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
 addIdentityInputs();
+
+function addTransactionTools() {
+  const anchor = document.getElementById("balanceMessage");
+  if (!anchor || document.getElementById("adminTransactionForm")) return;
+  const panel = document.createElement("div");
+  panel.id = "adminTransactionPanel";
+  panel.className = "mt-6 border-t border-slate-200 pt-5";
+  panel.innerHTML = `<div class="mb-4"><h5 class="text-sm font-semibold">Recent activity for this client</h5><p class="mt-1 text-xs text-slate-500">Add a test income or expense record. The account balance updates automatically.</p></div>
+    <form id="adminTransactionForm" class="grid gap-3 sm:grid-cols-2">
+      <label class="block text-xs font-semibold">Transaction type<select id="transactionType" class="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"><option value="expense">Expense</option><option value="income">Income</option></select></label>
+      <label class="block text-xs font-semibold">Amount<input id="transactionAmount" required type="number" min="0.01" max="1000000" step="0.01" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm" placeholder="0.00"></label>
+      <label class="block text-xs font-semibold">From / Merchant<input id="transactionCounterparty" required maxlength="80" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm" placeholder="Employer or shop"></label>
+      <label class="block text-xs font-semibold">For / Description<input id="transactionDescription" required maxlength="120" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm" placeholder="Salary, groceries, utility bill"></label>
+      <label class="block text-xs font-semibold">Date<input id="transactionDate" required type="date" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label>
+      <label class="block text-xs font-semibold">Status<select id="transactionStatus" class="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"><option>Completed</option><option>Pending</option></select></label>
+      <p id="transactionFormMessage" class="hidden text-xs leading-5 sm:col-span-2" role="status"></p>
+      <button id="saveTransactionButton" class="rounded-lg bg-[#db0011] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#b8000e] sm:col-span-2">Add transaction</button>
+    </form><div id="adminTransactionList" class="mt-3 divide-y divide-slate-200"></div>`;
+  anchor.after(panel);
+  const date = new Date();
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  document.getElementById("transactionDate").value = date.toISOString().slice(0, 10);
+}
+
+addTransactionTools();
 
 function showMessage(el, message, kind = "error") {
   el.textContent = message;
@@ -58,12 +65,11 @@ function friendlyError(error) {
   const code = error?.code || "";
   if (code.includes("invalid-credential") || code.includes("user-not-found") || code.includes("wrong-password")) return "Email or password is incorrect.";
   if (code.includes("too-many-requests")) return "Too many attempts. Wait a little and try again.";
-  if (code.includes("email-already-exists")) return "An account with this email already exists.";
-  if (code.includes("functions/already-exists")) return "An account with this email already exists. Use another email address.";
-  if (code.includes("functions/internal")) return "Firebase could not create the account. Check Firebase Console → Functions → Logs for adminCreateClient. If you just updated the form, make sure the latest Cloud Function is deployed.";
+  if (code.includes("email-already-in-use") || code.includes("email-already-exists")) return "An account with this email already exists. Use another email address.";
+  if (code.includes("weak-password")) return "Choose a stronger password (at least 10 characters).";
   if (code.includes("permission-denied")) return "Firebase denied the admin check. In Firebase Console, publish firestore.rules and add admins/{your Auth UID} with enabled=true for this administrator.";
   if (code.includes("unauthenticated")) return "Sign in again and retry.";
-  if (code.includes("functions/unavailable") || code.includes("not-found")) return "Firebase Functions are not deployed yet. See the setup guide.";
+  if (code.includes("not-found")) return "The requested client account was not found.";
   return error?.message || "Something went wrong. Please try again.";
 }
 
@@ -82,7 +88,7 @@ function setPortal(role) {
     document.getElementById("adminIdentity").textContent = auth.currentUser?.email || "Administrator";
     loadClients();
   } else {
-    loadClientRecord();
+    subscribeClientData();
   }
   if (window.lucide) window.lucide.createIcons();
 }
@@ -96,22 +102,25 @@ async function resolveRole(user) {
   return adminRecord.exists() && adminRecord.data().enabled === true ? "admin" : "client";
 }
 
-async function loadClientRecord() {
+function subscribeClientData() {
   const user = auth.currentUser;
-  try {
-    const snap = await getDoc(doc(db, "users", user.uid));
+  if (!user) return;
+  stopClientProfileListener();
+  stopClientTransactionsListener();
+  stopClientProfileListener = onSnapshot(doc(db, "users", user.uid), async snap => {
     if (!snap.exists()) {
-      showMessage(authMessage, "Your client profile is not set up. Ask an administrator to create the demo account.");
+      showMessage(authMessage, "Your client profile is not set up. Ask an administrator to create the account.");
       await signOut(auth);
       return;
     }
     const record = snap.data();
     window.applyClientRecord(record);
     renderClientIdentity(record);
-  } catch (error) {
-    showMessage(authMessage, friendlyError(error));
-    await signOut(auth);
-  }
+  }, error => showMessage(authMessage, friendlyError(error)));
+  const transactionQuery = query(collection(db, "users", user.uid, "transactions"), orderBy("createdAt", "desc"), limit(50));
+  stopClientTransactionsListener = onSnapshot(transactionQuery, snapshot => {
+    window.applyClientTransactions(snapshot.docs.map(item => ({ id: item.id, ...item.data() })));
+  }, error => showToast(friendlyError(error)));
 }
 
 function renderClientIdentity(record) {
@@ -123,7 +132,8 @@ function renderClientIdentity(record) {
     panel.id = "clientIdentityPanel";
     panel.className = "mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6";
     panel.innerHTML = `<div class="mb-4 flex items-center gap-3"><span class="grid h-10 w-10 place-items-center rounded-xl bg-rose-50 text-rose-700"><i data-lucide="contact-round" class="h-5 w-5"></i></span><div><h2 class="font-semibold">Personal information</h2><p class="mt-1 text-xs text-slate-500">Details provided for this account</p></div></div><dl class="grid gap-x-6 gap-y-4 sm:grid-cols-2"><div><dt class="text-[11px] text-slate-400">Full name</dt><dd data-identity="fullName" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Passport number</dt><dd data-identity="passportNumber" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Registered address</dt><dd data-identity="registeredAddress" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Phone number</dt><dd data-identity="phoneNumber" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Passport issue date</dt><dd data-identity="passportIssueDate" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Citizenship</dt><dd data-identity="citizenship" class="mt-1 break-words text-sm font-medium">—</dd></div></dl><p class="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-[10px] leading-4 text-amber-900">Simulation account: these profile details must be fictional.</p>`;
-    settings.insertBefore(panel, settings.children[1] || null);
+    const heading = settings.querySelector(".mb-7");
+    settings.replaceChildren(...(heading ? [heading, panel] : [panel]));
   }
   const values = { fullName: record.displayName, ...(record.identity || {}) };
   panel.querySelectorAll("[data-identity]").forEach(item => {
@@ -133,16 +143,12 @@ function renderClientIdentity(record) {
   if (window.lucide) window.lucide.createIcons();
 }
 
-async function callAdmin(name, payload = {}) {
-  const action = httpsCallable(functions, name);
-  return (await action(payload)).data;
-}
-
 async function loadClients() {
   const container = document.getElementById("clientList");
   container.replaceChildren(Object.assign(document.createElement("p"), { className: "p-6 text-sm text-slate-400", textContent: "Loading client records…" }));
   try {
-    const { clients } = await callAdmin("adminListClients");
+    const result = await getDocs(query(collection(db, "users"), orderBy("createdAt", "desc"), limit(250)));
+    const clients = result.docs.map(item => ({ uid: item.id, ...item.data() }));
     document.getElementById("clientCount").textContent = clients.length;
     container.replaceChildren();
     if (!clients.length) {
@@ -180,67 +186,79 @@ async function loadClients() {
   }
 }
 
-function renderDocumentRows(container, documents, uid, emptyMessage, admin = false) {
+function renderAdminTransactions(container, records) {
   container.replaceChildren();
-  if (!documents.length) {
-    container.append(Object.assign(document.createElement("p"), { className: "p-6 text-sm text-slate-400", textContent: emptyMessage }));
+  if (!records.length) {
+    container.append(Object.assign(document.createElement("p"), { className: "py-3 text-xs text-slate-400", textContent: "No transactions added for this client yet." }));
     return;
   }
-  documents.forEach(item => {
+  records.forEach(record => {
     const row = document.createElement("div");
-    row.className = "flex items-center gap-3 px-5 py-4";
-    const icon = document.createElement("span");
-    icon.className = "grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-rose-50 text-rose-700";
-    icon.innerHTML = '<i data-lucide="file-text" class="h-5 w-5"></i>';
-    const detail = document.createElement("span");
-    detail.className = "min-w-0 flex-1";
-    const title = document.createElement("span");
-    title.className = "block truncate text-sm font-semibold text-slate-800";
-    title.textContent = item.title || "Document";
-    const meta = document.createElement("span");
-    meta.className = "mt-1 block truncate text-xs text-slate-500";
-    const date = item.createdAt?.toDate ? item.createdAt.toDate().toLocaleDateString("en-US") : "Recently added";
-    meta.textContent = `${item.category || "PDF"} · ${date}${admin ? ` · ${Math.max(1, Math.ceil((item.sizeBytes || 0) / 1024))} KB` : ""}`;
-    detail.append(title, meta);
-    const download = document.createElement("button");
-    download.type = "button";
-    download.className = "inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50";
-    download.innerHTML = '<i data-lucide="download" class="h-4 w-4"></i><span>Download</span>';
-    download.addEventListener("click", async () => {
-      download.disabled = true;
-      try {
-        if (!item.dataBase64) throw new Error("The document file is missing.");
-        downloadPdf(item.dataBase64, item.originalName);
-      } catch (error) { showToast(friendlyError(error)); }
-      finally { download.disabled = false; }
-    });
-    row.append(icon, detail, download);
+    row.className = "flex items-center gap-3 py-3";
+    const description = document.createElement("span");
+    description.className = "min-w-0 flex-1";
+    const name = document.createElement("span");
+    name.className = "block truncate text-xs font-semibold text-slate-800";
+    name.textContent = record.counterparty || "Transaction";
+    const note = document.createElement("span");
+    note.className = "mt-1 block truncate text-[10px] text-slate-500";
+    note.textContent = `${record.description || ""} · ${record.date || ""} · ${record.status || "Completed"}`;
+    description.append(name, note);
+    const amount = document.createElement("span");
+    amount.className = `shrink-0 text-xs font-semibold ${record.type === "income" ? "text-emerald-700" : "text-slate-800"}`;
+    amount.textContent = `${record.type === "income" ? "+" : "−"}${new Intl.NumberFormat("en-US", { style: "currency", currency: record.currency || "USD" }).format(Number(record.amount || 0))}`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "shrink-0 rounded-lg border border-rose-200 px-2.5 py-1.5 text-[10px] font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-wait disabled:opacity-50";
+    remove.textContent = "Delete";
+    remove.setAttribute("aria-label", `Delete transaction: ${record.counterparty || "Transaction"}`);
+    remove.addEventListener("click", () => deleteAdminTransaction(record, remove));
+    row.append(description, amount, remove);
     container.append(row);
   });
-  if (window.lucide) window.lucide.createIcons();
 }
 
-async function loadClientDocuments() {
-  const container = document.getElementById("clientDocumentList");
-  const user = auth?.currentUser;
-  if (!user) return;
-  container.replaceChildren(Object.assign(document.createElement("p"), { className: "p-6 text-sm text-slate-400", textContent: "Loading your documents…" }));
+async function deleteAdminTransaction(record, button) {
+  const uid = document.getElementById("selectedClientUid").value;
+  if (!uid || !record.id) return;
+  if (!window.confirm(`Delete the ${record.type === "income" ? "income" : "expense"} of ${new Intl.NumberFormat("en-US", { style: "currency", currency: record.currency || "USD" }).format(Number(record.amount || 0))} from ${record.counterparty || "this transaction"}? The account balance will be adjusted too.`)) return;
+
+  if (button) { button.disabled = true; button.textContent = "Deleting…"; }
+  const message = document.getElementById("transactionFormMessage");
   try {
-    const result = await getDocs(query(collection(db, "users", user.uid, "documents"), orderBy("createdAt", "desc")));
-    const documents = result.docs.map(item => ({ id: item.id, ...item.data() }));
-    renderDocumentRows(container, documents, user.uid, "No documents have been shared with you yet.");
+    const accountRef = doc(db, "users", uid);
+    const transactionRef = doc(db, "users", uid, "transactions", record.id);
+    let updatedBalance = 0;
+    await runTransaction(db, async firestoreTransaction => {
+      const [accountSnapshot, transactionSnapshot] = await Promise.all([
+        firestoreTransaction.get(accountRef),
+        firestoreTransaction.get(transactionRef)
+      ]);
+      if (!accountSnapshot.exists() || !transactionSnapshot.exists()) throw new Error("The account or transaction no longer exists.");
+      const currentTransaction = transactionSnapshot.data();
+      const amount = Number(currentTransaction.amount || 0);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error("This transaction has an invalid amount and cannot be deleted safely.");
+      const balanceChange = currentTransaction.type === "income" ? -amount : amount;
+      updatedBalance = Math.round((Number(accountSnapshot.data().checkingBalance || 0) + balanceChange) * 100) / 100;
+      if (updatedBalance < 0) throw new Error("The balance cannot be adjusted safely. Update the client's balance before deleting this income.");
+      firestoreTransaction.update(accountRef, { checkingBalance: updatedBalance, updatedAt: serverTimestamp() });
+      firestoreTransaction.delete(transactionRef);
+    });
+    document.getElementById("editClientBalance").value = updatedBalance.toFixed(2);
+    showMessage(message, "Transaction deleted and account balance adjusted.", "success");
+    await Promise.all([loadAdminTransactions(uid), loadClients()]);
   } catch (error) {
-    container.replaceChildren(Object.assign(document.createElement("p"), { className: "p-6 text-sm text-rose-700", textContent: friendlyError(error) }));
+    showMessage(message, friendlyError(error));
+    await loadAdminTransactions(uid);
   }
 }
 
-async function loadAdminDocuments(uid) {
-  const container = document.getElementById("adminDocumentList");
-  container.replaceChildren(Object.assign(document.createElement("p"), { className: "py-3 text-xs text-slate-400", textContent: "Loading client documents…" }));
+async function loadAdminTransactions(uid) {
+  const container = document.getElementById("adminTransactionList");
+  container.replaceChildren(Object.assign(document.createElement("p"), { className: "py-3 text-xs text-slate-400", textContent: "Loading transactions…" }));
   try {
-    const result = await getDocs(query(collection(db, "users", uid, "documents"), orderBy("createdAt", "desc")));
-    const documents = result.docs.map(item => ({ id: item.id, ...item.data() }));
-    renderDocumentRows(container, documents, uid, "No documents added for this client yet.", true);
+    const result = await getDocs(query(collection(db, "users", uid, "transactions"), orderBy("createdAt", "desc"), limit(50)));
+    renderAdminTransactions(container, result.docs.map(item => ({ id: item.id, ...item.data() })));
   } catch (error) {
     container.replaceChildren(Object.assign(document.createElement("p"), { className: "py-3 text-xs text-rose-700", textContent: friendlyError(error) }));
   }
@@ -254,8 +272,66 @@ function selectClient(client) {
   document.getElementById("editClientBalance").value = Number(client.checkingBalance || 0).toFixed(2);
   document.getElementById("editClientCurrency").value = client.currency || "USD";
   document.getElementById("balanceMessage").classList.add("hidden");
-  document.getElementById("documentFormMessage").classList.add("hidden");
-  loadAdminDocuments(client.uid);
+  document.getElementById("transactionFormMessage").classList.add("hidden");
+  loadAdminTransactions(client.uid);
+}
+
+async function createClientAccount(profile) {
+  if (!auth?.currentUser) throw new Error("Sign in with the administrator account first.");
+  const adminProfile = await getDoc(doc(db, "admins", auth.currentUser.uid));
+  if (!adminProfile.exists() || adminProfile.data().enabled !== true) throw new Error("Only an enabled administrator can create client accounts.");
+  if (typeof profile.password !== "string" || profile.password.length < 10 || profile.password.length > 128) throw new Error("The password must contain 10 to 128 characters.");
+  const normalizedCardNumber = String(profile.cardNumber || "").replace(/[\s-]/g, "");
+  if (!/^\d{12,19}$/.test(normalizedCardNumber)) throw new Error("Enter a fictional card number with 12 to 19 digits.");
+  if (!Number.isFinite(profile.checkingBalance) || profile.checkingBalance < 0 || profile.checkingBalance > 1_000_000) throw new Error("The opening balance must be between 0 and 1,000,000.");
+  if (!["USD", "EUR", "GBP"].includes(profile.currency)) throw new Error("Choose USD, EUR, or GBP.");
+  if (!profile.displayName || profile.displayName.length > 80) throw new Error("Enter the client's full name.");
+  if (!profile.passportNumber || profile.passportNumber.length > 40 || !profile.registeredAddress || profile.registeredAddress.length > 200 || !profile.phoneNumber || profile.phoneNumber.length > 32 || !profile.citizenship || profile.citizenship.length > 80) throw new Error("Complete all client identity fields.");
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(profile.cardExpiry)) throw new Error("Choose a valid card expiration month.");
+  const [expiryYear, expiryMonth] = profile.cardExpiry.split("-").map(Number);
+  const currentMonth = new Date();
+  if (expiryYear < currentMonth.getFullYear() || (expiryYear === currentMonth.getFullYear() && expiryMonth < currentMonth.getMonth() + 1)) throw new Error("The card expiration must be this month or later.");
+  const issueDate = new Date(`${profile.passportIssueDate}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(profile.passportIssueDate) || Number.isNaN(issueDate.getTime()) || issueDate.toISOString().slice(0, 10) !== profile.passportIssueDate) throw new Error("Enter a valid passport issue date.");
+
+  const secondaryApp = initializeApp(firebaseConfig, `client-creator-${crypto.randomUUID()}`);
+  const secondaryAuth = getAuth(secondaryApp);
+  let createdUser = null;
+  let profileRef = null;
+  try {
+    await setPersistence(secondaryAuth, inMemoryPersistence);
+    const credential = await createUserWithEmailAndPassword(secondaryAuth, profile.email.trim().toLowerCase(), profile.password);
+    createdUser = credential.user;
+    const cardNumber = normalizedCardNumber;
+    profileRef = doc(db, "users", createdUser.uid);
+    await setDoc(profileRef, {
+      displayName: profile.displayName,
+      email: createdUser.email,
+      checkingBalance: Math.round(profile.checkingBalance * 100) / 100,
+      currency: profile.currency,
+      cardNumber,
+      cardLast4: cardNumber.slice(-4),
+      cardExpiry: profile.cardExpiry,
+      identity: {
+        passportNumber: profile.passportNumber,
+        registeredAddress: profile.registeredAddress,
+        phoneNumber: profile.phoneNumber,
+        passportIssueDate: profile.passportIssueDate,
+        citizenship: profile.citizenship
+      },
+      role: "client",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    if (profileRef) await deleteDoc(profileRef).catch(() => {});
+    if (createdUser) await deleteUser(createdUser).catch(() => {});
+    if (error.code === "auth/email-already-in-use") throw new Error("An account with this email already exists. Use another email address.");
+    if (error.code === "auth/weak-password") throw new Error("Choose a stronger password (at least 10 characters).");
+    throw error;
+  } finally {
+    await deleteApp(secondaryApp).catch(() => {});
+  }
 }
 
 document.getElementById("loginForm").addEventListener("submit", async event => {
@@ -295,13 +371,14 @@ document.getElementById("createClientForm").addEventListener("submit", async eve
   submit.textContent = "Creating account…";
   adminMessage.classList.add("hidden");
   try {
-    await callAdmin("adminCreateClient", {
+    await createClientAccount({
       displayName: document.getElementById("newClientName").value.trim(),
       email: document.getElementById("newClientEmail").value.trim(),
       password: document.getElementById("newClientPassword").value,
       checkingBalance: Number(document.getElementById("newClientBalance").value),
       currency: document.getElementById("newClientCurrency").value,
       cardNumber: document.getElementById("newClientCardNumber").value,
+      cardExpiry: document.getElementById("newClientCardExpiry").value,
       passportNumber: document.getElementById("newClientPassportNumber").value.trim(),
       registeredAddress: document.getElementById("newClientRegisteredAddress").value.trim(),
       phoneNumber: document.getElementById("newClientPhoneNumber").value.trim(),
@@ -320,51 +397,73 @@ document.getElementById("balanceForm").addEventListener("submit", async event =>
   event.preventDefault();
   const message = document.getElementById("balanceMessage");
   try {
-    await callAdmin("adminUpdateBalance", {
-      uid: document.getElementById("selectedClientUid").value,
+    await updateDoc(doc(db, "users", document.getElementById("selectedClientUid").value), {
       checkingBalance: Number(document.getElementById("editClientBalance").value),
-      currency: document.getElementById("editClientCurrency").value
+      currency: document.getElementById("editClientCurrency").value,
+      updatedAt: serverTimestamp()
     });
-    showMessage(message, "Demo balance updated and audit entry recorded.", "success");
+    showMessage(message, "Account balance updated.", "success");
     await loadClients();
   } catch (error) { showMessage(message, friendlyError(error)); }
 });
 
-document.getElementById("adminDocumentForm").addEventListener("submit", async event => {
+document.getElementById("adminTransactionForm").addEventListener("submit", async event => {
   event.preventDefault();
-  const message = document.getElementById("documentFormMessage");
-  const button = document.getElementById("uploadDocumentButton");
-  const file = document.getElementById("documentFile").files[0];
+  const message = document.getElementById("transactionFormMessage");
+  const button = document.getElementById("saveTransactionButton");
   const uid = document.getElementById("selectedClientUid").value;
   if (!uid) return showMessage(message, "Select a client account first.");
-  if (!file || file.type !== "application/pdf" || !file.name.toLowerCase().endsWith(".pdf")) {
-    return showMessage(message, "Choose a PDF document.");
-  }
-  if (file.size < 1 || file.size > MAX_DOCUMENT_BYTES) {
-    return showMessage(message, "PDF files must be 512 KB or smaller.");
-  }
-  const documentId = crypto.randomUUID();
+  const amount = Number(document.getElementById("transactionAmount").value);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) return showMessage(message, "Enter an amount greater than 0 and no more than 1,000,000.");
   button.disabled = true;
-  button.textContent = "Saving PDF…";
+  button.textContent = "Adding transaction…";
   message.classList.add("hidden");
   try {
-    await callAdmin("adminAddClientDocument", {
-      uid,
-      documentId,
-      title: document.getElementById("documentTitle").value.trim(),
-      description: document.getElementById("documentDescription").value.trim(),
-      category: document.getElementById("documentCategory").value,
-      originalName: file.name,
-      fileBase64: await fileToBase64(file)
+    const accountRef = doc(db, "users", uid);
+    const transactionRef = doc(collection(db, "users", uid, "transactions"));
+    const type = document.getElementById("transactionType").value;
+    const counterparty = document.getElementById("transactionCounterparty").value.trim();
+    const description = document.getElementById("transactionDescription").value.trim();
+    let updatedBalance = 0;
+    await runTransaction(db, async firestoreTransaction => {
+      const accountSnapshot = await firestoreTransaction.get(accountRef);
+      if (!accountSnapshot.exists()) throw new Error("The selected client account no longer exists.");
+      const account = accountSnapshot.data();
+      const currentBalance = Number(account.checkingBalance || 0);
+      const signedAmount = type === "income" ? amount : -amount;
+      updatedBalance = Math.round((currentBalance + signedAmount) * 100) / 100;
+      if (updatedBalance < 0) throw new Error("This expense is greater than the client's current balance.");
+      firestoreTransaction.update(accountRef, { checkingBalance: updatedBalance, updatedAt: serverTimestamp() });
+      firestoreTransaction.set(transactionRef, {
+        type,
+        counterparty,
+        description,
+        amount: Math.round(amount * 100) / 100,
+        currency: account.currency || "USD",
+        date: document.getElementById("transactionDate").value,
+        status: document.getElementById("transactionStatus").value,
+        createdBy: auth.currentUser.uid,
+        createdAt: serverTimestamp()
+      });
     });
     event.target.reset();
-    showMessage(message, "PDF saved and shared with the selected client.", "success");
-    await loadAdminDocuments(uid);
+    const today = new Date();
+    today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+    document.getElementById("transactionDate").value = today.toISOString().slice(0, 10);
+    showMessage(message, "Transaction added to the client's recent activity.", "success");
+    document.getElementById("editClientBalance").value = updatedBalance.toFixed(2);
+    await loadAdminTransactions(uid);
+    await loadClients();
   } catch (error) {
-    showMessage(message, friendlyError(error));
+    if (error.code === "permission-denied") {
+      const adminRecord = await getDoc(doc(db, "admins", auth.currentUser.uid)).catch(() => null);
+      showMessage(message, adminRecord?.exists() && adminRecord.data().enabled === true
+        ? "Firestore denied this write. Publish the latest firestore.rules file, then sign out and sign in again."
+        : "This login is not enabled as an administrator. Check admins/{your Auth UID} has enabled=true.");
+    } else showMessage(message, friendlyError(error));
   } finally {
     button.disabled = false;
-    button.textContent = "Upload document";
+    button.textContent = "Add transaction";
   }
 });
 
@@ -372,7 +471,6 @@ document.getElementById("refreshClients").addEventListener("click", loadClients)
 document.getElementById("closeBalanceEditor").addEventListener("click", () => document.getElementById("balanceEditor").classList.add("hidden"));
 document.getElementById("adminLogout").addEventListener("click", () => signOut(auth));
 window.firebaseLogout = () => signOut(auth);
-window.loadClientDocuments = loadClientDocuments;
 
 if (!firebaseReady) {
   console.info("Firebase setup needed: edit firebase-config.js before enabling authentication.");
@@ -380,9 +478,10 @@ if (!firebaseReady) {
   const firebaseApp = initializeApp(firebaseConfig);
   auth = getAuth(firebaseApp);
   db = getFirestore(firebaseApp);
-  functions = getFunctions(firebaseApp);
   onAuthStateChanged(auth, async user => {
     if (!user) {
+      stopClientProfileListener();
+      stopClientTransactionsListener();
       document.getElementById("bankingApp").classList.add("hidden");
       document.getElementById("publicSite").classList.remove("hidden");
       return;

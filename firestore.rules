@@ -17,18 +17,34 @@ service cloud.firestore {
     match /users/{uid} {
       allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow list: if isAdmin();
-      // Profile and balance writes go through privileged callable functions.
-      allow create, update, delete: if false;
+      // Only an enabled administrator may create profiles or update balances.
+      allow create, update: if isAdmin();
+      allow delete: if false;
 
       match /documents/{documentId} {
         allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
-        allow write: if false;
+        allow create, update: if isAdmin()
+          && request.resource.data.contentType == "application/pdf"
+          && request.resource.data.sizeBytes is int
+          && request.resource.data.sizeBytes > 0
+          && request.resource.data.sizeBytes <= 524288
+          && request.resource.data.dataBase64 is string
+          && request.resource.data.dataBase64.size() <= 699052;
+        allow delete: if isAdmin();
+      }
+
+      match /transactions/{transactionId} {
+        allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+        allow create: if isAdmin();
+        allow update: if false;
+        allow delete: if isAdmin();
       }
     }
 
     match /audit/{uid}/entries/{entryId} {
       allow read: if isAdmin();
-      allow write: if false;
+      allow create: if isAdmin();
+      allow update, delete: if false;
     }
 
     match /{document=**} {
