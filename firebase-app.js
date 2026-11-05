@@ -59,6 +59,8 @@ function friendlyError(error) {
   if (code.includes("invalid-credential") || code.includes("user-not-found") || code.includes("wrong-password")) return "Email or password is incorrect.";
   if (code.includes("too-many-requests")) return "Too many attempts. Wait a little and try again.";
   if (code.includes("email-already-exists")) return "An account with this email already exists.";
+  if (code.includes("functions/already-exists")) return "An account with this email already exists. Use another email address.";
+  if (code.includes("functions/internal")) return "Firebase could not create the account. Check Firebase Console → Functions → Logs for adminCreateClient. If you just updated the form, make sure the latest Cloud Function is deployed.";
   if (code.includes("permission-denied")) return "Firebase denied the admin check. In Firebase Console, publish firestore.rules and add admins/{your Auth UID} with enabled=true for this administrator.";
   if (code.includes("unauthenticated")) return "Sign in again and retry.";
   if (code.includes("functions/unavailable") || code.includes("not-found")) return "Firebase Functions are not deployed yet. See the setup guide.";

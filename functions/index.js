@@ -105,6 +105,7 @@ exports.adminCreateClient = onCall(async request => {
       createdAt: FieldValue.serverTimestamp()
     });
   } catch (error) {
+    console.error("adminCreateClient failed", error.code || "unknown", error.message || "No error message");
     if (userRecord) await getAuth().deleteUser(userRecord.uid).catch(() => {});
     if (error instanceof HttpsError) throw error;
     if (error.code === "auth/email-already-exists") throw new HttpsError("already-exists", "A user already exists with this email.");
