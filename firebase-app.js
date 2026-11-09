@@ -17,7 +17,7 @@ function addIdentityInputs() {
   fieldset.id = "clientIdentityFields";
   fieldset.className = "mb-5 rounded-xl border border-slate-200 p-4";
   fieldset.innerHTML = `<legend class="px-1 text-xs font-bold text-slate-800">Client identity details</legend>
-    <p class="mb-4 text-[10px] leading-4 text-amber-800">For this HSBC-branded simulation, enter fictional test details only.</p>
+    <p class="mb-4 text-[10px] leading-4 text-amber-800">Specify the desired data for the client.</p>
     <label class="mb-3 block text-xs font-semibold">Passport number<input id="newClientPassportNumber" required maxlength="40" autocomplete="off" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label>
     <label class="mb-3 block text-xs font-semibold">Registered address<input id="newClientRegisteredAddress" required maxlength="200" autocomplete="off" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label>
     <div class="mb-3 grid grid-cols-2 gap-3"><label class="block text-xs font-semibold">Phone number<input id="newClientPhoneNumber" required type="tel" maxlength="32" autocomplete="off" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label>
