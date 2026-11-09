@@ -25,7 +25,7 @@ function addIdentityInputs() {
     <label class="block text-xs font-semibold">Passport issue date<input id="newClientPassportIssueDate" required type="date" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"></label>`;
   const expiryLabel = document.createElement("label");
   expiryLabel.className = "mb-5 block text-xs font-semibold";
-  expiryLabel.innerHTML = `Card expiration<input id="newClientCardExpiry" required type="month" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"><span class="mt-1 block text-[10px] font-normal text-slate-400">Fictional demo card only.</span>`;
+  expiryLabel.innerHTML = `Card expiration<input id="newClientCardExpiry" required type="month" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"><span class="mt-1 block text-[10px] font-normal text-slate-400">Fictional card only.</span>`;
   document.getElementById("newClientCardNumber").closest("label").after(expiryLabel);
   document.getElementById("adminFormMessage").before(fieldset);
   const expiryInput = document.getElementById("newClientCardExpiry");
@@ -138,9 +138,9 @@ function organizeAdminEditor() {
   if (!balanceForm || !balanceMessage || !accountsPanel || !activityPanel || !documentsPanel) return;
 
   const tabs = [
-    { id: "overview", label: "Overview", icon: "layout-dashboard", title: "Account overview", hint: "Set the main demo account balance and currency." },
+    { id: "overview", label: "Overview", icon: "layout-dashboard", title: "Account overview", hint: "Set the main account balance and currency." },
     { id: "accounts", label: "Accounts & IBAN", icon: "landmark", title: "Accounts & IBAN", hint: "Add accounts and adjust each displayed balance." },
-    { id: "activity", label: "Activity", icon: "arrow-left-right", title: "Transactions", hint: "Add or remove demo income and expense entries." },
+    { id: "activity", label: "Activity", icon: "arrow-left-right", title: "Transactions", hint: "Add or remove income and expense entries." },
     { id: "documents", label: "Documents", icon: "files", title: "Client documents", hint: "Manage synthetic PDF files for this client." }
   ];
   const tabBar = document.createElement("div");
@@ -387,7 +387,7 @@ async function loadClients() {
     document.getElementById("clientCount").textContent = clients.length;
     container.replaceChildren();
     if (!clients.length) {
-      container.append(Object.assign(document.createElement("p"), { className: "p-6 text-sm text-slate-400", textContent: "No client accounts yet. Create the first demo account using the form." }));
+      container.append(Object.assign(document.createElement("p"), { className: "p-6 text-sm text-slate-400", textContent: "No client accounts yet. Create the first account using the form." }));
       return;
     }
     clients.forEach(client => {
@@ -626,7 +626,7 @@ async function adjustClientAccount(uid, accountId, rawAmount, direction, button)
         createdAt: serverTimestamp()
       });
     });
-    showMessage(message, direction > 0 ? "Funds added to this demo account." : "Funds withdrawn from this demo account.", "success");
+    showMessage(message, direction > 0 ? "Funds added to this account." : "Funds withdrawn from this account.", "success");
     await loadClients();
     const updated = await getDoc(doc(db, "users", uid));
     if (updated.exists()) renderAdminAccounts(uid, normalizeAccounts(updated.data()));
@@ -756,11 +756,11 @@ document.getElementById("createClientForm").addEventListener("submit", async eve
     });
     event.target.reset();
     document.getElementById("newClientBalance").value = "0.00";
-    showMessage(adminMessage, "Demo client account created.", "success");
+    showMessage(adminMessage, "Client account created.", "success");
     await loadClients();
     window.setAdminWorkspaceMode?.("list");
   } catch (error) { showMessage(adminMessage, friendlyError(error)); }
-  finally { submit.disabled = false; submit.textContent = "Create demo account"; }
+  finally { submit.disabled = false; submit.textContent = "Create account"; }
 });
 
 document.getElementById("balanceForm").addEventListener("submit", async event => {
@@ -822,7 +822,7 @@ document.getElementById("addClientAccountForm").addEventListener("submit", async
       if (!snap.exists()) throw new Error("The selected client account no longer exists.");
       const profile = snap.data();
       const accounts = normalizeAccounts(profile);
-      if (isIban ? accounts.some(account => String(account.iban || "").replace(/\s/g, "").toUpperCase() === ibanRaw) : accounts.some(account => String(account.cardNumber || "").replace(/\D/g, "") === cardNumber)) throw new Error(isIban ? "That demo IBAN is already assigned to this client." : "That fictional card number is already assigned to this client.");
+      if (isIban ? accounts.some(account => String(account.iban || "").replace(/\s/g, "").toUpperCase() === ibanRaw) : accounts.some(account => String(account.cardNumber || "").replace(/\D/g, "") === cardNumber)) throw new Error(isIban ? "That IBAN is already assigned to this client." : "That fictional card number is already assigned to this client.");
       accounts.push({
         id: crypto.randomUUID(),
         name,
@@ -842,7 +842,7 @@ document.getElementById("addClientAccountForm").addEventListener("submit", async
     event.target.reset();
     document.getElementById("newAccountType").dispatchEvent(new Event("change"));
     document.getElementById("newAccountBalance").value = "0.00";
-    showMessage(message, isIban ? "Demo IBAN account added." : "Demo account and linked card added.", "success");
+    showMessage(message, isIban ? "IBAN account added." : "Account and linked card added.", "success");
     const updated = await getDoc(doc(db, "users", uid));
     if (updated.exists()) renderAdminAccounts(uid, normalizeAccounts(updated.data()));
     await loadClients();
