@@ -376,7 +376,7 @@ function renderClientIdentity(record) {
         </span>
         <div>
           <h2 class="font-semibold">Personal information</h2>
-          <p class="mt-1 text-xs text-slate-500">Details provided for this simulated account</p>
+          <p class="mt-1 text-xs text-slate-500">Details provided for this account</p>
         </div>
       </div>
 
@@ -434,7 +434,7 @@ function renderClientIdentity(record) {
 
       <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5">
         <p class="text-[10px] leading-4 text-slate-400">
-          Simulation account: all profile and account details are fictional. This is not a live banking service.
+          You can log out using the button below.
         </p>
         <button id="profileLogout" type="button"
           class="shrink-0 rounded-lg border border-rose-200 px-4 py-2.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">
