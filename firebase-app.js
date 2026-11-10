@@ -360,22 +360,118 @@ function subscribeClientData() {
 function renderClientIdentity(record) {
   const settings = document.getElementById("view-settings");
   if (!settings) return;
+
   let panel = document.getElementById("clientIdentityPanel");
+
   if (!panel) {
     panel = document.createElement("section");
     panel.id = "clientIdentityPanel";
-    panel.className = "mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6";
-    panel.innerHTML = `<div class="mb-4 flex items-center gap-3"><span class="grid h-10 w-10 place-items-center rounded-xl bg-rose-50 text-rose-700"><i data-lucide="contact-round" class="h-5 w-5"></i></span><div><h2 class="font-semibold">Personal information</h2><p class="mt-1 text-xs text-slate-500">Details provided for this account</p></div></div><dl class="grid gap-x-6 gap-y-4 sm:grid-cols-2"><div><dt class="text-[11px] text-slate-400">Full name</dt><dd data-identity="fullName" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Email address</dt><dd data-identity="email" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Passport number</dt><dd data-identity="passportNumber" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Registered address</dt><dd data-identity="registeredAddress" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Phone number</dt><dd data-identity="phoneNumber" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Passport issue date</dt><dd data-identity="passportIssueDate" class="mt-1 break-words text-sm font-medium">—</dd></div><div><dt class="text-[11px] text-slate-400">Citizenship</dt><dd data-identity="citizenship" class="mt-1 break-words text-sm font-medium">—</dd></div></dl><div class="mt-6 grid gap-3 border-t border-slate-100 pt-5 sm:grid-cols-3"><div class="rounded-xl bg-slate-50 p-4"><p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Profile status</p><p class="mt-2 flex items-center gap-2 text-xs font-semibold text-emerald-700"><span class="h-2 w-2 rounded-full bg-emerald-500"></span>Account active</p></div><div class="rounded-xl bg-slate-50 p-4"><p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Sign-in security</p><p class="mt-2 text-xs font-semibold text-slate-700">Password protected</p></div><div class="rounded-xl bg-slate-50 p-4"><p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Support</p><button id="profileManagerHelp" class="mt-2 text-xs font-semibold text-brand-700">Contact account manager →</button></div></div><p class="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-[10px] leading-4 text-amber-900">Your data is protected and visible only to you. HSBC</p>`;
+    panel.className =
+      "mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6";
+
+    panel.innerHTML = `
+      <div class="mb-4 flex items-center gap-3">
+        <span class="grid h-10 w-10 place-items-center rounded-xl bg-rose-50 text-rose-700">
+          <i data-lucide="contact-round" class="h-5 w-5"></i>
+        </span>
+        <div>
+          <h2 class="font-semibold">Personal information</h2>
+          <p class="mt-1 text-xs text-slate-500">Details provided for this simulated account</p>
+        </div>
+      </div>
+
+      <dl class="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+        <div>
+          <dt class="text-[11px] text-slate-400">Full name</dt>
+          <dd data-identity="fullName" class="mt-1 break-words text-sm font-medium">—</dd>
+        </div>
+        <div>
+          <dt class="text-[11px] text-slate-400">Email address</dt>
+          <dd data-identity="email" class="mt-1 break-words text-sm font-medium">—</dd>
+        </div>
+        <div>
+          <dt class="text-[11px] text-slate-400">Passport number</dt>
+          <dd data-identity="passportNumber" class="mt-1 break-words text-sm font-medium">—</dd>
+        </div>
+        <div>
+          <dt class="text-[11px] text-slate-400">Registered address</dt>
+          <dd data-identity="registeredAddress" class="mt-1 break-words text-sm font-medium">—</dd>
+        </div>
+        <div>
+          <dt class="text-[11px] text-slate-400">Phone number</dt>
+          <dd data-identity="phoneNumber" class="mt-1 break-words text-sm font-medium">—</dd>
+        </div>
+        <div>
+          <dt class="text-[11px] text-slate-400">Passport issue date</dt>
+          <dd data-identity="passportIssueDate" class="mt-1 break-words text-sm font-medium">—</dd>
+        </div>
+        <div>
+          <dt class="text-[11px] text-slate-400">Citizenship</dt>
+          <dd data-identity="citizenship" class="mt-1 break-words text-sm font-medium">—</dd>
+        </div>
+      </dl>
+
+      <div class="mt-6 grid gap-3 border-t border-slate-100 pt-5 sm:grid-cols-3">
+        <div class="rounded-xl bg-slate-50 p-4">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Profile status</p>
+          <p class="mt-2 flex items-center gap-2 text-xs font-semibold text-emerald-700">
+            <span class="h-2 w-2 rounded-full bg-emerald-500"></span>Account active
+          </p>
+        </div>
+
+        <div class="rounded-xl bg-slate-50 p-4">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Sign-in security</p>
+          <p class="mt-2 text-xs font-semibold text-slate-700">Password protected</p>
+        </div>
+
+        <div class="rounded-xl bg-slate-50 p-4">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Support</p>
+          <button id="profileManagerHelp" type="button" class="mt-2 text-xs font-semibold text-brand-700">
+            Contact account manager →
+          </button>
+        </div>
+      </div>
+
+      <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5">
+        <p class="text-[10px] leading-4 text-slate-400">
+          Simulation account: all profile and account details are fictional. This is not a live banking service.
+        </p>
+        <button id="profileLogout" type="button"
+          class="shrink-0 rounded-lg border border-rose-200 px-4 py-2.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">
+          Log out
+        </button>
+      </div>
+    `;
+
     const heading = settings.querySelector(".mb-7");
-    settings.replaceChildren(...(heading ? [heading, panel] : [panel]));
+    const updates = settings.querySelector("#profileUpdates");
+    settings.replaceChildren(
+      ...(heading ? [heading] : []),
+      panel,
+      ...(updates ? [updates] : [])
+    );
+
+    panel.querySelector("#profileManagerHelp")?.addEventListener("click", () => {
+      window.openManagerChat?.();
+    });
+
+    panel.querySelector("#profileLogout")?.addEventListener("click", () => {
+      window.firebaseLogout?.();
+    });
   }
-  const values = { fullName: record.displayName, email: record.email, ...(record.identity || {}) };
+
+  const values = {
+    fullName: record.displayName,
+    email: record.email,
+    ...(record.identity || {})
+  };
+
   panel.querySelectorAll("[data-identity]").forEach(item => {
     const value = values[item.dataset.identity];
     item.textContent = value ? String(value) : "Not provided";
   });
+
   if (window.lucide) window.lucide.createIcons();
-  panel.querySelector("#profileManagerHelp")?.addEventListener("click", () => window.openManagerChat?.());
 }
 
 async function loadClients() {
